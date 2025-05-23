@@ -1,0 +1,100 @@
+version: '3.8'
+
+services:
+  # Frontend Vue.js
+  frontend:
+    build:
+      context: ../services/frontend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../services/frontend/src:/app/src
+      - ../services/frontend/public:/app/public
+    environment:
+      - NODE_ENV=development
+    depends_on:
+      - microservice-1
+
+  # Microservice 1 - API Gateway
+  microservice-1:
+    build:
+      context: ../services/microservice-1
+    ports:
+      - "8080:8080"
+    volumes:
+      - ../services/microservice-1/src:/app/src
+    environment:
+      - NODE_ENV=development
+      - PORT=8080
+      - GOOGLE_CLOUD_PROJECT=nahuelgabe-test
+      - PUBSUB_TOPIC=item-events
+      - PUBSUB_EMULATOR_HOST=pubsub-emulator:8085
+    depends_on:
+      - pubsub-emulator
+
+  # Microservice 2 - Event Processor
+  microservice-2:
+    build:
+      context: ../services/microservice-2
+    ports:
+      - "8081:8081"
+    volumes:
+      - ../services/microservice-2/src:/app/src
+    environment:
+      - NODE_ENV=development
+      - PORT=8081
+      - GOOGLE_CLOUD_PROJECT=nahuelgabe-test
+      - PUBSUB_SUBSCRIPTION=item-events-subscription
+      - FIRESTORE_EMULATOR_HOST=firestore-emulator:8080
+      - PUBSUB_EMULATOR_HOST=pubsub-emulator:8085
+    depends_on:
+      - firestore-emulator
+      - pubsub-emulator
+
+  # Google Cloud Pub/Sub Emulator
+  pubsub-emulator:
+    image: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
+    ports:
+      - "8085:8085"
+    command: >
+      /bin/bash -c "
+        gcloud components install pubsub-emulator --quiet &&
+        gcloud beta emulators pubsub start --host-port=0.0.0.0:8085 --project=nahuelgabe-test
+      "
+    environment:
+      - PUBSUB_PROJECT_ID=nahuelgabe-test
+
+  # Google Cloud Firestore Emulator
+  firestore-emulator:
+    image: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
+    ports:
+      - "8080:8080"
+      - "4000:4000"
+    command: >
+      /bin/bash -c "
+        gcloud components install cloud-firestore-emulator --quiet &&
+        gcloud beta emulators firestore start --host-port=0.0.0.0:8080 --project=nahuelgabe-test
+      "
+    environment:
+      - FIRESTORE_PROJECT_ID=nahuelgabe-test
+
+  # Setup service para crear topics y subscriptions
+  setup:
+    image: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
+    depends_on:
+      - pubsub-emulator
+    environment:
+      - PUBSUB_EMULATOR_HOST=pubsub-emulator:8085
+      - PUBSUB_PROJECT_ID=nahuelgabe-test
+    command: >
+      /bin/bash -c "
+        sleep 10 &&
+        gcloud config set project nahuelgabe-test &&
+        gcloud pubsub topics create item-events --project=nahuelgabe-test &&
+        gcloud pubsub subscriptions create item-events-subscription --topic=item-events --project=nahuelgabe-test
+      "
+
+networks:
+  default:
+    name: platform-test-network

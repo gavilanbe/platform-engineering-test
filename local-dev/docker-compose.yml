@@ -1,0 +1,100 @@
+services:
+  # Frontend Vue.js
+  frontend:
+    build:
+      context: ../services/frontend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    volumes:
+      - ../services/frontend/src:/app/src
+      - ../services/frontend/public:/app/public
+    environment:
+      - NODE_ENV=development
+    depends_on:
+      - microservice-1
+
+  # Microservice 1 - API Gateway
+  microservice-1:
+    build:
+      context: ../services/microservice-1
+    ports:
+      - "${MICROSERVICE_1_PORT:-8080}:8080"
+    volumes:
+      - ../services/microservice-1/src:/app/src
+    environment:
+      - NODE_ENV=development
+      - PORT=8080
+      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT}
+      - PUBSUB_TOPIC=${PUBSUB_TOPIC}
+      - PUBSUB_EMULATOR_HOST=pubsub-emulator:8085
+      - CORS_ORIGIN=${CORS_ORIGIN}
+    depends_on:
+      - pubsub-emulator
+
+  # Microservice 2 - Event Processor
+  microservice-2:
+    build:
+      context: ../services/microservice-2
+    ports:
+      - "${MICROSERVICE_2_PORT:-8081}:8081"
+    volumes:
+      - ../services/microservice-2/src:/app/src
+    environment:
+      - NODE_ENV=development
+      - PORT=8081
+      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT}
+      - PUBSUB_SUBSCRIPTION=${PUBSUB_SUBSCRIPTION}
+      - FIRESTORE_COLLECTION=${FIRESTORE_COLLECTION}
+      - FIRESTORE_EMULATOR_HOST=firestore-emulator:8080
+      - PUBSUB_EMULATOR_HOST=pubsub-emulator:8085
+      - CORS_ORIGIN=${CORS_ORIGIN}
+    depends_on:
+      - firestore-emulator
+      - pubsub-emulator
+
+  # Google Cloud Pub/Sub Emulator
+  pubsub-emulator:
+    image: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
+    platform: linux/arm64
+    ports:
+      - "8085:8085"
+    command: >
+      /bin/bash -c "
+        gcloud components install pubsub-emulator --quiet &&
+        gcloud beta emulators pubsub start --host-port=0.0.0.0:8085 --project=${GOOGLE_CLOUD_PROJECT}
+      "
+
+  # Google Cloud Firestore Emulator
+  firestore-emulator:
+    image: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
+    platform: linux/arm64
+    ports:
+      - "8082:8080"
+      - "4000:4000"
+    command: >
+      /bin/bash -c "
+        gcloud components install cloud-firestore-emulator --quiet &&
+        gcloud beta emulators firestore start --host-port=0.0.0.0:8080 --project=${GOOGLE_CLOUD_PROJECT}
+      "
+
+  # Setup service para crear topics y subscriptions
+  setup:
+    image: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
+    platform: linux/arm64
+    depends_on:
+      - pubsub-emulator
+    environment:
+      - PUBSUB_EMULATOR_HOST=pubsub-emulator:8085
+      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT}
+    command: >
+      /bin/bash -c "
+        sleep 10 &&
+        gcloud config set project ${GOOGLE_CLOUD_PROJECT} &&
+        gcloud pubsub topics create ${PUBSUB_TOPIC} --project=${GOOGLE_CLOUD_PROJECT} &&
+        gcloud pubsub subscriptions create ${PUBSUB_SUBSCRIPTION} --topic=${PUBSUB_TOPIC} --project=${GOOGLE_CLOUD_PROJECT}
+      "
+
+networks:
+  default:
+    name: platform-test-network

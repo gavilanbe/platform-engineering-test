@@ -11,7 +11,11 @@
     "build": "lerna run build",
     "test": "lerna run test",
     "lint": "lerna run lint",
-    "dev": "docker-compose -f local-dev/docker-compose.yml up",
+    "dev": "./scripts/dev-docker.sh",
+    "dev:local": "concurrently \"npm run dev:frontend\" \"npm run dev:api\" \"npm run dev:events\"",
+    "dev:frontend": "cd services/frontend && npm run serve",
+    "dev:api": "cd services/microservice-1 && npm run dev",
+    "dev:events": "cd services/microservice-2 && npm run dev",
     "clean": "lerna clean",
     "version": "lerna version --conventional-commits",
     "release": "lerna publish from-package",
@@ -24,7 +28,8 @@
     "husky": "^8.0.3",
     "semantic-release": "^22.0.0",
     "@semantic-release/changelog": "^6.0.3",
-    "@semantic-release/git": "^10.0.1"
+    "@semantic-release/git": "^10.0.1",
+    "concurrently": "^8.2.2"
   },
   "engines": {
     "node": ">=18.0.0",
